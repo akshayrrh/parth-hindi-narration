@@ -1,0 +1,36 @@
+name: Record
+on:
+  workflow_dispatch:
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install git+https://github.com/huggingface/parler-tts.git soundfile
+          pip install -U protobuf
+      - name: Record
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python3 tools/render_parler.py out --shard ${{ matrix.shard }}/20 --seconds 19200 2>&1 | grep -v -i "warn\|attention"
+      - name: Encrypt
+        env:
+          AUDIO_KEY: ${{ secrets.AUDIO_KEY }}
+        run: tar cf - -C out . | gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$AUDIO_KEY" -o clips-${{ matrix.shard }}.tar.gpg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clips-${{ matrix.shard }}
+          path: clips-${{ matrix.shard }}.tar.gpg
+          retention-days: 3
+          compression-level: 0
